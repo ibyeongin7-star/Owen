@@ -36,6 +36,21 @@
   .detail-box { background:#FBF9F2; border:1px solid #d8d2c2; border-radius:8px; padding:12px; white-space:pre-wrap; font-size:14px; line-height:1.7; }
   .tag { display:inline-block; font-size:12px; padding:3px 10px; border-radius:999px; margin-bottom:10px; font-weight:500; }
   .del { background:transparent; border:1px solid #c2392f; color:#c2392f; border-radius:8px; padding:8px 12px; font-size:12px; cursor:pointer; margin-top:16px; }
+  .tabbar { display:flex; gap:18px; margin-bottom:18px; border-bottom:1px solid #262620; }
+  .tab { padding:0 0 10px; font-size:14px; color:#8a8474; cursor:pointer; border-bottom:2px solid transparent; font-weight:500; }
+  .tab.active { color:#EAE5D8; border-bottom-color:#EAE5D8; font-weight:700; }
+  .todo-add-row { display:flex; gap:8px; margin-bottom:16px; }
+  .todo-add-row input { flex:1; }
+  .todo-item { display:flex; align-items:flex-start; gap:10px; background:#151512; border:1px solid #2a2a26; border-radius:10px; padding:12px 14px; margin-bottom:8px; }
+  .todo-check { width:20px; height:20px; border-radius:6px; border:2px solid #8a8474; flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; margin-top:2px; font-size:12px; color:#0a0a0a; }
+  .todo-check.done { background:#8fae86; border-color:#8fae86; }
+  .todo-text { flex:1; font-size:14px; line-height:1.5; word-break:break-word; padding-top:1px; }
+  .todo-text.done { text-decoration:line-through; color:#6b6b66; }
+  .todo-actions { display:flex; gap:4px; flex-shrink:0; }
+  .icon-btn { background:transparent; border:none; color:#8a8474; cursor:pointer; font-size:15px; padding:2px 6px; }
+  .todo-section-label { font-size:11px; color:#6b6b66; margin:18px 0 8px; letter-spacing:1px; }
+  .todo-edit-row { display:flex; gap:6px; flex:1; }
+  .todo-edit-row input { flex:1; padding:6px 8px; font-size:13px; }
 </style>
 </head>
 <body>
@@ -64,18 +79,34 @@ function classify(title){
 }
 function fmt(ts){ return new Date(ts).toLocaleString("ja-JP"); }
 
-let state = { view:"folders", folder:null, noteId:null };
+const STORE_KEY_TODO = "cocomi_memo_todos";
+function loadTodos(){ try { return JSON.parse(localStorage.getItem(STORE_KEY_TODO) || "[]"); } catch(e){ return []; } }
+function saveTodos(list){ localStorage.setItem(STORE_KEY_TODO, JSON.stringify(list)); }
+
+let state = { tab:"memo", view:"folders", folder:null, noteId:null, editingTodoId:null };
 let notes = loadNotes();
+let todos = loadTodos();
 
 function render(){
   const app = document.getElementById("app");
+  const showBack = state.tab==='memo' && state.view!=='folders';
   let html = `<div class="header">
     <div style="display:flex;align-items:center;gap:10px;">
-      ${state.view!=='folders' ? `<button class="back" onclick="goBack()">←</button>` : ''}
+      ${showBack ? `<button class="back" onclick="goBack()">←</button>` : ''}
       <div></div>
     </div>
-    <button class="btn btn-dark" onclick="state.view='compose'; render();">+</button>
+    ${state.tab==='memo' ? `<button class="btn btn-dark" onclick="state.view='compose'; render();">+</button>` : ''}
+  </div>
+  <div class="tabbar">
+    <div class="tab ${state.tab==='memo'?'active':''}" onclick="state.tab='memo';render();">メモ</div>
+    <div class="tab ${state.tab==='todo'?'active':''}" onclick="state.tab='todo';render();">To-do</div>
   </div>`;
+
+  if (state.tab === 'todo') {
+    html += renderTodo();
+    app.innerHTML = html;
+    return;
+  }
 
   if (state.view === "folders") {
     html += `<div class="grid5">`;
@@ -197,6 +228,81 @@ function deleteNote(id){
   notes = notes.filter(n=>n.id!==id);
   saveNotes(notes);
   state.view='folder';
+  render();
+}
+
+function renderTodo(){
+  const pending = todos.filter(t=>!t.done).sort((a,b)=>b.createdAt-a.createdAt);
+  const done = todos.filter(t=>t.done).sort((a,b)=>(b.updatedAt||b.createdAt)-(a.updatedAt||a.createdAt));
+
+  let h = `<div class="todo-add-row">
+    <input type="text" id="todoInput" placeholder="やることを入力…" onkeydown="if(event.key==='Enter')addTodo();">
+    <button class="btn btn-dark" onclick="addTodo()">追加</button>
+  </div>`;
+
+  if (todos.length === 0) {
+    h += `<div class="empty">まだTo-doがありません。</div>`;
+    return h;
+  }
+
+  const renderItem = (t) => {
+    if (state.editingTodoId === t.id) {
+      return `<div class="todo-item">
+        <div class="todo-edit-row">
+          <input type="text" id="todoEditInput_${t.id}" value="${escapeAttr(t.text)}" onkeydown="if(event.key==='Enter')saveTodoEdit('${t.id}');">
+          <button class="icon-btn" onclick="saveTodoEdit('${t.id}')">✓</button>
+          <button class="icon-btn" onclick="state.editingTodoId=null;render();">✕</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="todo-item">
+      <div class="todo-check ${t.done?'done':''}" onclick="toggleTodo('${t.id}')">${t.done ? '✓' : ''}</div>
+      <div class="todo-text ${t.done?'done':''}">${escapeHtml(t.text)}</div>
+      <div class="todo-actions">
+        <button class="icon-btn" onclick="state.editingTodoId='${t.id}';render();">✎</button>
+        <button class="icon-btn" onclick="deleteTodo('${t.id}')">🗑</button>
+      </div>
+    </div>`;
+  };
+
+  pending.forEach(t => { h += renderItem(t); });
+
+  if (done.length > 0) {
+    h += `<div class="todo-section-label">完了 (${done.length})</div>`;
+    done.forEach(t => { h += renderItem(t); });
+  }
+
+  return h;
+}
+
+function addTodo(){
+  const input = document.getElementById("todoInput");
+  const text = input.value.trim();
+  if (!text) return;
+  todos.unshift({ id:'t_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), text, done:false, createdAt:Date.now() });
+  saveTodos(todos);
+  render();
+}
+
+function toggleTodo(id){
+  todos = todos.map(t => t.id===id ? { ...t, done: !t.done, updatedAt: Date.now() } : t);
+  saveTodos(todos);
+  render();
+}
+
+function saveTodoEdit(id){
+  const input = document.getElementById("todoEditInput_"+id);
+  const text = input.value.trim();
+  if (!text) return;
+  todos = todos.map(t => t.id===id ? { ...t, text, updatedAt: Date.now() } : t);
+  saveTodos(todos);
+  state.editingTodoId = null;
+  render();
+}
+
+function deleteTodo(id){
+  todos = todos.filter(t=>t.id!==id);
+  saveTodos(todos);
   render();
 }
 
