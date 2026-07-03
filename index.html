@@ -97,7 +97,7 @@ function render(){
     html += `<div style="font-weight:700;color:${c.color};margin-bottom:12px;font-family:'Noto Serif JP',serif;">${c.jp}</div>`;
     if (list.length===0) html += `<div class="empty">まだこの感情のメモはありません。</div>`;
     list.forEach(n => {
-      html += `<div class="list-item" onclick="state.view='detail';state.noteId='${n.id}';render();">
+      html += `<div class="list-item" onclick="state.view='detail';state.noteId='${n.id}';state.editing=false;render();">
         <div class="item-title">${n.title || '（タイトルなし）'}</div>
         <div class="item-text">${escapeHtml(n.text)}</div>
         <div class="item-date">${fmt(n.createdAt)}</div>
@@ -122,10 +122,27 @@ function render(){
     const n = notes.find(x=>x.id===state.noteId);
     if (n) {
       const c = EMOTIONS[n.emotion];
-      html += `<span class="tag" style="background:${c.bg};color:${c.color};border:1px solid ${c.ring};">${c.jp}</span>
-        <div style="font-size:11px;color:#a39c8a;margin-bottom:10px;">${fmt(n.createdAt)} ・ タイトル: ${n.title || '（なし）'}</div>
-        <div class="detail-box">${escapeHtml(n.text)}</div>
-        <button class="del" onclick="deleteNote('${n.id}')">このメモを削除</button>`;
+      if (state.editing) {
+        html += `
+          <label>タイトル（喜び / 悲しみ / 愛 / 怒り のいずれかを書くと自動分類されます）</label>
+          <input type="text" id="editTitleInput" value="${escapeAttr(n.title)}" placeholder="例: 喜び、悲しみ…">
+          <div class="hint">何も書かなければ「無意味」に分類されます。</div>
+          <label>内容</label>
+          <textarea id="editTextInput">${escapeHtml(n.text)}</textarea>
+          <div class="save-row">
+            <button class="btn btn-dark" style="flex:1;" onclick="saveEdit('${n.id}')">保存する</button>
+            <button class="btn" style="background:transparent;border:1px solid #8a8474;color:#EAE5D8;" onclick="state.editing=false;render();">キャンセル</button>
+          </div>
+        `;
+      } else {
+        html += `<span class="tag" style="background:${c.bg};color:${c.color};border:1px solid ${c.ring};">${c.jp}</span>${n.updatedAt ? `<span class="tag" style="background:#2a2a26;color:#EAE5D8;border:1px solid #4a4438;margin-left:6px;">編集済み</span>` : ''}
+          <div style="font-size:11px;color:#a39c8a;margin-bottom:10px;">${fmt(n.createdAt)} ・ タイトル: ${n.title || '（なし）'}</div>
+          <div class="detail-box">${escapeHtml(n.text)}</div>
+          <div style="display:flex;gap:8px;margin-top:16px;">
+            <button class="btn btn-dark" onclick="state.editing=true;render();">編集する</button>
+            <button class="del" onclick="deleteNote('${n.id}')">このメモを削除</button>
+          </div>`;
+      }
     }
   }
 
@@ -133,8 +150,10 @@ function render(){
 }
 
 function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function escapeAttr(s){ return escapeHtml(s); }
 
 function goBack(){
+  state.editing = false;
   if (state.view==='detail') state.view = 'folder';
   else if (state.view==='folder') state.view='folders';
   else if (state.view==='compose') state.view='folders';
@@ -155,6 +174,22 @@ function submitNote(){
   notes.unshift(note);
   saveNotes(notes);
   state.view = 'folders';
+  render();
+}
+
+function saveEdit(id){
+  const title = document.getElementById("editTitleInput").value;
+  const text = document.getElementById("editTextInput").value.trim();
+  if (!text) return;
+  notes = notes.map(n => n.id===id ? {
+    ...n,
+    title: title.trim(),
+    text,
+    emotion: classify(title),
+    updatedAt: Date.now(),
+  } : n);
+  saveNotes(notes);
+  state.editing = false;
   render();
 }
 
