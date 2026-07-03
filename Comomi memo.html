@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cocomi-memo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0a0a0a; font-family:'Noto Sans KR',sans-serif; color:#EAE5D8; min-height:100vh; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 20px 14px 60px; }
+  .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .title-jp { font-family:'Noto Serif JP',serif; font-weight:700; font-size:22px; letter-spacing:1px; }
+  .subtitle { font-size:11px; color:#8a8474; letter-spacing:1px; }
+  .btn { border:none; cursor:pointer; border-radius:999px; padding:9px 14px; font-weight:500; font-size:13px; font-family:'Noto Sans KR',sans-serif; }
+  .btn-dark { background:#2a2a26; color:#EAE5D8; }
+  .back { background:transparent; border:none; cursor:pointer; padding:6px; font-size:18px; color:#4a4438; }
+  .grid5 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .card { border-radius:14px; padding:18px 16px; cursor:pointer; min-height:100px; transition:transform .15s; }
+  .card:hover { transform: translateY(-3px); }
+  .badge { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:'Noto Serif JP',serif; font-weight:700; font-size:17px; margin-bottom:10px; border-width:2px; border-style:solid; }
+  .list-item { background:#F7F4EB; border:1px solid #dcd5c2; border-radius:12px; padding:14px 16px; margin-bottom:10px; cursor:pointer; }
+  .item-title { font-weight:700; font-size:13px; margin-bottom:4px; }
+  .item-text { font-size:13px; white-space:pre-wrap; max-height:54px; overflow:hidden; color:#2a2a26; }
+  .item-date { font-size:11px; color:#a39c8a; margin-top:6px; }
+  label { font-size:12px; color:#8a8474; display:block; margin:12px 0 5px; }
+  input[type=text] { width:100%; padding:10px 12px; border:1px solid #d8d2c2; border-radius:8px; background:#FBF9F2; font-size:14px; font-family:'Noto Sans KR',sans-serif; }
+  textarea {
+    width:100%; min-height:300px; padding:12px 14px; border:1px solid #d8d2c2; border-radius:8px;
+    background:#FBF9F2; resize:vertical; color:#2a2a26;
+    font-family:'Noto Sans KR',sans-serif; font-size:15px; line-height:1.6; letter-spacing:normal;
+  }
+  .hint { font-size:11.5px; color:#a6332f; margin-top:6px; }
+  .save-row { margin-top:16px; display:flex; gap:8px; }
+  .empty { color:#8a8474; font-size:13px; padding:20px 0; }
+  .detail-box { background:#FBF9F2; border:1px solid #d8d2c2; border-radius:8px; padding:12px; white-space:pre-wrap; font-size:14px; line-height:1.7; }
+  .tag { display:inline-block; font-size:12px; padding:3px 10px; border-radius:999px; margin-bottom:10px; font-weight:500; }
+  .del { background:transparent; border:1px solid #c2392f; color:#c2392f; border-radius:8px; padding:8px 12px; font-size:12px; cursor:pointer; margin-top:16px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+const EMOTIONS = {
+  "기쁨": { jp:"喜び", color:"#B8891A", bg:"#FBF3E1", ring:"#E4C77A", kw:["기쁨","喜び"] },
+  "슬픔": { jp:"悲しみ", color:"#3B4B6B", bg:"#EEF1F6", ring:"#9AACC9", kw:["슬픔","悲しみ"] },
+  "사랑": { jp:"愛", color:"#A6332F", bg:"#F8ECEA", ring:"#D99490", kw:["사랑","愛"] },
+  "화남": { jp:"怒り", color:"#232323", bg:"#EFEBE6", ring:"#B33A3A", kw:["화남","怒り"] },
+  "의미없음": { jp:"無意味", color:"#6B6B66", bg:"#EFEEEA", ring:"#B7B5AC", kw:[] },
+};
+const ORDER = ["기쁨","슬픔","사랑","화남","의미없음"];
+const STORE_KEY = "cocomi_memo_notes";
+
+function loadNotes(){ try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); } catch(e){ return []; } }
+function saveNotes(list){ localStorage.setItem(STORE_KEY, JSON.stringify(list)); }
+function classify(title){
+  const t = (title||"").trim();
+  for (const emo of ORDER) {
+    if (emo === "의미없음") continue;
+    if (EMOTIONS[emo].kw.some(k => t.includes(k))) return emo;
+  }
+  return "의미없음";
+}
+function fmt(ts){ return new Date(ts).toLocaleString("ko-KR"); }
+
+let state = { view:"folders", folder:null, noteId:null };
+let notes = loadNotes();
+
+function render(){
+  const app = document.getElementById("app");
+  let html = `<div class="header">
+    <div style="display:flex;align-items:center;gap:10px;">
+      ${state.view!=='folders' ? `<button class="back" onclick="goBack()">←</button>` : ''}
+      <div></div>
+    </div>
+    <button class="btn btn-dark" onclick="state.view='compose'; render();">+</button>
+  </div>`;
+
+  if (state.view === "folders") {
+    html += `<div class="grid5">`;
+    ORDER.forEach(emo => {
+      const c = EMOTIONS[emo];
+      const count = notes.filter(n=>n.emotion===emo).length;
+      html += `<div class="card" style="background:${c.bg};border:1px solid ${c.ring};" onclick="state.view='folder';state.folder='${emo}';render();">
+        <div class="badge" style="border-color:${c.color};color:${c.color};">${c.jp[0]}</div>
+        <div style="font-weight:700;font-size:15px;">${emo} <span style="color:${c.color};font-family:'Noto Serif JP',serif;">${c.jp}</span></div>
+        <div style="font-size:12px;color:#8a8474;margin-top:4px;">${count}개의 메모</div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (state.view === "folder") {
+    const c = EMOTIONS[state.folder];
+    const list = notes.filter(n=>n.emotion===state.folder).sort((a,b)=>b.createdAt-a.createdAt);
+    html += `<div style="font-weight:700;color:${c.color};margin-bottom:12px;">${state.folder} · ${c.jp}</div>`;
+    if (list.length===0) html += `<div class="empty">아직 이 감정의 메모가 없어요.</div>`;
+    list.forEach(n => {
+      html += `<div class="list-item" onclick="state.view='detail';state.noteId='${n.id}';render();">
+        <div class="item-title">${n.title || '(제목 없음)'}</div>
+        <div class="item-text">${escapeHtml(n.text)}</div>
+        <div class="item-date">${fmt(n.createdAt)}</div>
+      </div>`;
+    });
+  }
+
+  if (state.view === "compose") {
+    html += `
+      <label>제목 (기쁨 / 슬픔 / 사랑 / 화남 중 하나를 적으면 자동 분류돼요)</label>
+      <input type="text" id="titleInput" placeholder="예: 기쁨, 悲しみ ...">
+      <div class="hint">아무것도 안 적으면 '의미없음'으로 분류돼요.</div>
+      <label>내용</label>
+      <textarea id="textInput" placeholder="今、感じていることを書いてください…"></textarea>
+      <div class="save-row">
+        <button class="btn btn-dark" style="flex:1;" onclick="submitNote()">메모 남기기</button>
+      </div>
+    `;
+  }
+
+  if (state.view === "detail") {
+    const n = notes.find(x=>x.id===state.noteId);
+    if (n) {
+      const c = EMOTIONS[n.emotion];
+      html += `<span class="tag" style="background:${c.bg};color:${c.color};border:1px solid ${c.ring};">${n.emotion} ${c.jp}</span>
+        <div style="font-size:11px;color:#a39c8a;margin-bottom:10px;">${fmt(n.createdAt)} · 제목: ${n.title || '(없음)'}</div>
+        <div class="detail-box">${escapeHtml(n.text)}</div>
+        <button class="del" onclick="deleteNote('${n.id}')">이 메모 삭제</button>`;
+    }
+  }
+
+  app.innerHTML = html;
+}
+
+function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function goBack(){
+  if (state.view==='detail') state.view = 'folder';
+  else if (state.view==='folder') state.view='folders';
+  else if (state.view==='compose') state.view='folders';
+  render();
+}
+
+function submitNote(){
+  const title = document.getElementById("titleInput").value;
+  const text = document.getElementById("textInput").value.trim();
+  if (!text) return;
+  const note = {
+    id: 'n_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    title: title.trim(),
+    text,
+    emotion: classify(title),
+    createdAt: Date.now(),
+  };
+  notes.unshift(note);
+  saveNotes(notes);
+  state.view = 'folders';
+  render();
+}
+
+function deleteNote(id){
+  notes = notes.filter(n=>n.id!==id);
+  saveNotes(notes);
+  state.view='folder';
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
