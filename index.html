@@ -377,9 +377,11 @@ function renderCharacters(){
   }
 
   // list view
-  let h = '';
+  let h = `<div class="save-row" style="margin-top:0;margin-bottom:18px;">
+    <button class="btn btn-dark" style="flex:1;" onclick="state.charView='compose';state.charEditing=false;render();">＋ 新しい登場人物を追加</button>
+  </div>`;
   if (characters.length === 0) {
-    h += `<div class="empty">まだ登場人物が登録されていません。右上の「+」から追加できます。</div>`;
+    h += `<div class="empty">まだ登場人物が登録されていません。</div>`;
   } else {
     characters.slice().sort((a,b)=>b.createdAt-a.createdAt).forEach(c => {
       h += `<div class="char-card" onclick="state.charView='detail';state.charId='${c.id}';render();">
@@ -398,17 +400,18 @@ function saveCharacter(id){
   const national = document.getElementById("charNationInput").value.trim();
   const prison = document.getElementById("charPrisonInput").value.trim();
   if (!name) return;
+  let isNew = false;
   if (id) {
     characters = characters.map(c => c.id===id ? { ...c, name, background, national, prison, updatedAt: Date.now() } : c);
-    state.charId = id;
   } else {
+    isNew = true;
     const newChar = { id:'c_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name, background, national, prison, createdAt:Date.now() };
     characters.unshift(newChar);
     state.charId = newChar.id;
   }
   saveCharacters(characters);
   state.charEditing = false;
-  state.charView = 'detail';
+  state.charView = isNew ? 'list' : 'detail';
   render();
 }
 
