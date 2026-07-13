@@ -51,6 +51,14 @@
   .todo-section-label { font-size:11px; color:#6b6b66; margin:18px 0 8px; letter-spacing:1px; }
   .todo-edit-row { display:flex; gap:6px; flex:1; }
   .todo-edit-row input { flex:1; padding:6px 8px; font-size:13px; }
+  .backup-row { display:flex; gap:8px; margin-top:24px; padding-top:16px; border-top:1px solid #262620; }
+  .backup-btn { flex:1; background:transparent; border:1px solid #4a4438; color:#a39c8a; border-radius:8px; padding:9px 10px; font-size:12px; cursor:pointer; font-family:'Noto Sans JP',sans-serif; }
+  .backup-note { font-size:11px; color:#6b6b66; margin-top:8px; line-height:1.6; }
+  .char-card { background:#151512; border:1px solid #2a2a26; border-radius:12px; padding:14px 16px; margin-bottom:10px; cursor:pointer; }
+  .char-name { font-family:'Noto Serif JP',serif; font-weight:700; font-size:16px; color:#EAE5D8; margin-bottom:4px; }
+  .char-snippet { font-size:12px; color:#8a8474; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .char-field-label { font-size:11px; color:#a6332f; letter-spacing:1px; margin:16px 0 6px; font-weight:700; }
+  .char-field-value { font-size:14px; color:#EAE5D8; white-space:pre-wrap; line-height:1.7; background:#151512; border:1px solid #2a2a26; border-radius:8px; padding:10px 12px; }
 </style>
 </head>
 <body>
@@ -83,27 +91,42 @@ const STORE_KEY_TODO = "cocomi_memo_todos";
 function loadTodos(){ try { return JSON.parse(localStorage.getItem(STORE_KEY_TODO) || "[]"); } catch(e){ return []; } }
 function saveTodos(list){ localStorage.setItem(STORE_KEY_TODO, JSON.stringify(list)); }
 
-let state = { tab:"memo", view:"folders", folder:null, noteId:null, editingTodoId:null };
+const STORE_KEY_CHAR = "cocomi_memo_characters";
+function loadCharacters(){ try { return JSON.parse(localStorage.getItem(STORE_KEY_CHAR) || "[]"); } catch(e){ return []; } }
+function saveCharacters(list){ localStorage.setItem(STORE_KEY_CHAR, JSON.stringify(list)); }
+
+let state = { tab:"memo", view:"folders", folder:null, noteId:null, editingTodoId:null, charView:"list", charId:null, charEditing:false };
 let notes = loadNotes();
 let todos = loadTodos();
+let characters = loadCharacters();
 
 function render(){
   const app = document.getElementById("app");
-  const showBack = state.tab==='memo' && state.view!=='folders';
+  const showBack = (state.tab==='memo' && state.view!=='folders') || (state.tab==='character' && state.charView!=='list');
+  const plusAction = state.tab==='memo' ? "state.view='compose'; render();"
+    : state.tab==='character' ? "state.charView='compose'; state.charEditing=false; render();"
+    : null;
   let html = `<div class="header">
     <div style="display:flex;align-items:center;gap:10px;">
       ${showBack ? `<button class="back" onclick="goBack()">←</button>` : ''}
       <div></div>
     </div>
-    ${state.tab==='memo' ? `<button class="btn btn-dark" onclick="state.view='compose'; render();">+</button>` : ''}
+    ${plusAction ? `<button class="btn btn-dark" onclick="${plusAction}">+</button>` : ''}
   </div>
   <div class="tabbar">
     <div class="tab ${state.tab==='memo'?'active':''}" onclick="state.tab='memo';render();">メモ</div>
     <div class="tab ${state.tab==='todo'?'active':''}" onclick="state.tab='todo';render();">To-do</div>
+    <div class="tab ${state.tab==='character'?'active':''}" onclick="state.tab='character';render();">登場人物</div>
   </div>`;
 
   if (state.tab === 'todo') {
     html += renderTodo();
+    app.innerHTML = html;
+    return;
+  }
+
+  if (state.tab === 'character') {
+    html += renderCharacters();
     app.innerHTML = html;
     return;
   }
@@ -120,6 +143,7 @@ function render(){
       </div>`;
     });
     html += `</div>`;
+    html += renderBackupRow();
   }
 
   if (state.view === "folder") {
@@ -185,6 +209,13 @@ function escapeAttr(s){ return escapeHtml(s); }
 
 function goBack(){
   state.editing = false;
+  if (state.tab === 'character') {
+    state.charEditing = false;
+    if (state.charView==='detail') state.charView='list';
+    else if (state.charView==='compose') state.charView='list';
+    render();
+    return;
+  }
   if (state.view==='detail') state.view = 'folder';
   else if (state.view==='folder') state.view='folders';
   else if (state.view==='compose') state.view='folders';
@@ -242,6 +273,7 @@ function renderTodo(){
 
   if (todos.length === 0) {
     h += `<div class="empty">まだTo-doがありません。</div>`;
+    h += renderBackupRow();
     return h;
   }
 
@@ -272,6 +304,7 @@ function renderTodo(){
     done.forEach(t => { h += renderItem(t); });
   }
 
+  h += renderBackupRow();
   return h;
 }
 
@@ -304,6 +337,138 @@ function deleteTodo(id){
   todos = todos.filter(t=>t.id!==id);
   saveTodos(todos);
   render();
+}
+
+function renderCharacters(){
+  if (state.charView === 'compose') {
+    const editing = state.charEditing && characters.find(c=>c.id===state.charId);
+    const c = editing || {};
+    return `
+      <label>名前</label>
+      <input type="text" id="charNameInput" value="${escapeAttr(c.name)}" placeholder="例: 山田花子">
+      <label>生い立ち（成長背景）</label>
+      <textarea id="charBgInput" style="min-height:120px;">${escapeHtml(c.background)}</textarea>
+      <label>国情（国家の状況）</label>
+      <textarea id="charNationInput" style="min-height:120px;">${escapeHtml(c.national)}</textarea>
+      <label>服役歴（刑務所での経歴）</label>
+      <textarea id="charPrisonInput" style="min-height:120px;">${escapeHtml(c.prison)}</textarea>
+      <div class="save-row">
+        <button class="btn btn-dark" style="flex:1;" onclick="saveCharacter(${editing ? `'${c.id}'` : 'null'})">保存する</button>
+      </div>
+    `;
+  }
+
+  if (state.charView === 'detail') {
+    const c = characters.find(x=>x.id===state.charId);
+    if (!c) return `<div class="empty">キャラクターが見つかりません。</div>`;
+    return `
+      <div class="char-name" style="font-size:20px;">${escapeHtml(c.name) || '（名前なし）'}</div>
+      <div class="char-field-label">生い立ち</div>
+      <div class="char-field-value">${escapeHtml(c.background) || '（未記入）'}</div>
+      <div class="char-field-label">国情</div>
+      <div class="char-field-value">${escapeHtml(c.national) || '（未記入）'}</div>
+      <div class="char-field-label">服役歴</div>
+      <div class="char-field-value">${escapeHtml(c.prison) || '（未記入）'}</div>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn btn-dark" onclick="state.charView='compose';state.charEditing=true;render();">編集する</button>
+        <button class="del" onclick="deleteCharacter('${c.id}')">削除</button>
+      </div>
+    `;
+  }
+
+  // list view
+  let h = '';
+  if (characters.length === 0) {
+    h += `<div class="empty">まだ登場人物が登録されていません。右上の「+」から追加できます。</div>`;
+  } else {
+    characters.slice().sort((a,b)=>b.createdAt-a.createdAt).forEach(c => {
+      h += `<div class="char-card" onclick="state.charView='detail';state.charId='${c.id}';render();">
+        <div class="char-name">${escapeHtml(c.name) || '（名前なし）'}</div>
+        <div class="char-snippet">${escapeHtml((c.background||'').slice(0,40))}</div>
+      </div>`;
+    });
+  }
+  h += renderBackupRow();
+  return h;
+}
+
+function saveCharacter(id){
+  const name = document.getElementById("charNameInput").value.trim();
+  const background = document.getElementById("charBgInput").value.trim();
+  const national = document.getElementById("charNationInput").value.trim();
+  const prison = document.getElementById("charPrisonInput").value.trim();
+  if (!name) return;
+  if (id) {
+    characters = characters.map(c => c.id===id ? { ...c, name, background, national, prison, updatedAt: Date.now() } : c);
+    state.charId = id;
+  } else {
+    const newChar = { id:'c_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name, background, national, prison, createdAt:Date.now() };
+    characters.unshift(newChar);
+    state.charId = newChar.id;
+  }
+  saveCharacters(characters);
+  state.charEditing = false;
+  state.charView = 'detail';
+  render();
+}
+
+function deleteCharacter(id){
+  characters = characters.filter(c=>c.id!==id);
+  saveCharacters(characters);
+  state.charView = 'list';
+  render();
+}
+
+function renderBackupRow(){
+  return `
+    <div class="backup-row">
+      <button class="backup-btn" onclick="exportBackup()">バックアップを書き出す</button>
+      <button class="backup-btn" onclick="document.getElementById('restoreFileInput').click()">バックアップを復元する</button>
+      <input type="file" id="restoreFileInput" accept="application/json" style="display:none;" onchange="importBackup(event)">
+    </div>
+    <div class="backup-note">「書き出す」を押すとメモ・To-do・登場人物すべてを1つのファイルに保存できます。定期的に書き出しておくと、万が一データが消えても復元できます。</div>
+  `;
+}
+
+function exportBackup(){
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    notes, todos, characters,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `cocomi-memo-backup-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importBackup(event){
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!confirm('現在のデータを、このバックアップファイルの内容で上書きします。よろしいですか？')) return;
+      notes = Array.isArray(data.notes) ? data.notes : notes;
+      todos = Array.isArray(data.todos) ? data.todos : todos;
+      characters = Array.isArray(data.characters) ? data.characters : characters;
+      saveNotes(notes);
+      saveTodos(todos);
+      saveCharacters(characters);
+      alert('復元が完了しました。');
+      render();
+    } catch (e) {
+      alert('ファイルの読み込みに失敗しました。正しいバックアップファイルか確認してください。');
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
 }
 
 render();
